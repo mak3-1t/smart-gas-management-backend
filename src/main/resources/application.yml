@@ -1,0 +1,32 @@
+spring:
+  application:
+    name: smart-gas-management
+
+  data:
+    mongodb:
+      # Đọc từ biến môi trường - KHÔNG hardcode credential ở đây
+      uri: ${MONGODB_URI}
+      database: ${MONGODB_DATABASE:gas_management_db}
+      auto-index-creation: true
+
+# ============================================================
+# Server
+# ============================================================
+server:
+  port: ${SERVER_PORT:8080}
+
+# ============================================================
+# Logging
+# ============================================================
+logging:
+  level:
+    org.springframework.data.mongodb: INFO
+    com.gasmanagement: DEBUG
+
+# ============================================================
+# JWT
+# ============================================================
+jwt:
+  secret: ${JWT_SECRET}
+  expiration: ${JWT_EXPIRATION:86400000}           # Default: 24 giờ
+  refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}  # Default: 7 ngày

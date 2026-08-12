@@ -1,7 +1,7 @@
 # Smart Gas Management – Backend
 
 ## Yêu cầu
-- Java 17+
+- Java 21+
 - Maven 3.8+
 - IntelliJ IDEA (khuyến nghị)
 

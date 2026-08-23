@@ -95,6 +95,9 @@ public class SecurityConfig {
 
                 .requestMatchers("/api/v1/inventory/**").hasAnyRole("MANAGER", "SYSTEM_ADMIN")
 
+                // ──── Manager Order Approval ────
+                .requestMatchers("/api/v1/manager/**").hasAnyRole("MANAGER", "SYSTEM_ADMIN")
+
                 // ──── MANAGER + STAFF (Delivery flow) ────
                 .requestMatchers("/api/v1/deliveries/**").hasAnyRole("MANAGER", "STAFF")
                 .requestMatchers("/api/v1/staff/**").hasAnyRole("MANAGER", "STAFF", "SYSTEM_ADMIN")

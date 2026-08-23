@@ -12,6 +12,12 @@ public interface ProductRepository extends MongoRepository<Product, String> {
     List<Product> findByBrandIdAndStatus(String brandId, ProductStatus status);
     List<Product> findByCategoryIdAndStatus(String categoryId, ProductStatus status);
 
-    @Query("{ 'name': { $regex: ?0, $options: 'i' }, 'status': 'ACTIVE' }")
-    List<Product> searchByName(String keyword);
+    List<Product> findByGasTypeAndStatus(String gasType, ProductStatus status);
+    List<Product> findByBrandIdAndCategoryIdAndStatus(String brandId, String categoryId, ProductStatus status);
+
+    @Query("{ 'gasPrice': { $gte: ?0, $lte: ?1 }, 'status': 'ACTIVE' }")
+    List<Product> findByGasPriceBetweenAndStatusActive(double minPrice, double maxPrice);
+
+    @Query("{ 'status': 'ACTIVE', $or: [ { 'name': { $regex: ?0, $options: 'i' } }, { 'gasType': { $regex: ?0, $options: 'i' } } ] }")
+    List<Product> searchActiveProducts(String keyword);
 }

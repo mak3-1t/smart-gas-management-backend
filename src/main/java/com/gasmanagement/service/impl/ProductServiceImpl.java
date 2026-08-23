@@ -20,6 +20,8 @@ public class ProductServiceImpl implements ProductService {
 
     private final ProductRepository productRepository;
 
+    // ─────────────── MANAGER ───────────────
+
     @Override
     public ProductResponse createProduct(ProductRequest request) {
         Product product = Product.builder()
@@ -35,29 +37,12 @@ public class ProductServiceImpl implements ProductService {
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
-
-        Product savedProduct = productRepository.save(product);
-        return mapToResponse(savedProduct);
-    }
-
-    @Override
-    public ProductResponse getProductById(String id) {
-        Product product = productRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sản phẩm với id: " + id));
-        return mapToResponse(product);
-    }
-
-    @Override
-    public List<ProductResponse> getAllActiveProducts() {
-        List<Product> products = productRepository.findByStatus(ProductStatus.ACTIVE);
-        return products.stream().map(this::mapToResponse).collect(Collectors.toList());
+        return mapToResponse(productRepository.save(product));
     }
 
     @Override
     public ProductResponse updateProduct(String id, ProductRequest request) {
-        Product product = productRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sản phẩm với id: " + id));
-
+        Product product = findByIdOrThrow(id);
         product.setName(request.getName());
         product.setBrandId(request.getBrandId());
         product.setCategoryId(request.getCategoryId());
@@ -67,19 +52,86 @@ public class ProductServiceImpl implements ProductService {
         product.setCylinderFee(request.getCylinderFee());
         product.setDescription(request.getDescription());
         product.setUpdatedAt(LocalDateTime.now());
-
-        Product updatedProduct = productRepository.save(product);
-        return mapToResponse(updatedProduct);
+        return mapToResponse(productRepository.save(product));
     }
 
     @Override
     public void deactivateProduct(String id) {
-        Product product = productRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sản phẩm với id: " + id));
-        
+        Product product = findByIdOrThrow(id);
         product.setStatus(ProductStatus.INACTIVE);
         product.setUpdatedAt(LocalDateTime.now());
         productRepository.save(product);
+    }
+
+    @Override
+    public ProductResponse activateProduct(String id) {
+        Product product = findByIdOrThrow(id);
+        product.setStatus(ProductStatus.ACTIVE);
+        product.setUpdatedAt(LocalDateTime.now());
+        return mapToResponse(productRepository.save(product));
+    }
+
+    @Override
+    public List<ProductResponse> getAllProducts() {
+        return productRepository.findAll().stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    // ─────────────── PUBLIC ───────────────
+
+    @Override
+    public ProductResponse getProductById(String id) {
+        return mapToResponse(findByIdOrThrow(id));
+    }
+
+    @Override
+    public List<ProductResponse> getAllActiveProducts() {
+        return productRepository.findByStatus(ProductStatus.ACTIVE).stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<ProductResponse> searchProducts(String keyword) {
+        return productRepository.searchActiveProducts(keyword).stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<ProductResponse> getProductsByBrand(String brandId) {
+        return productRepository.findByBrandIdAndStatus(brandId, ProductStatus.ACTIVE).stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<ProductResponse> getProductsByCategory(String categoryId) {
+        return productRepository.findByCategoryIdAndStatus(categoryId, ProductStatus.ACTIVE).stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<ProductResponse> getProductsByGasType(String gasType) {
+        return productRepository.findByGasTypeAndStatus(gasType, ProductStatus.ACTIVE).stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<ProductResponse> getProductsByPriceRange(double minPrice, double maxPrice) {
+        return productRepository.findByGasPriceBetweenAndStatusActive(minPrice, maxPrice).stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    // ─────────────── HELPER ───────────────
+
+    private Product findByIdOrThrow(String id) {
+        return productRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sản phẩm với id: " + id));
     }
 
     private ProductResponse mapToResponse(Product product) {

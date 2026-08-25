@@ -17,4 +17,6 @@ public interface OrderRepository extends MongoRepository<Order, String> {
     List<Order> findByPaymentStatus(PaymentStatus status);
     List<Order> findByApprovalStatusOrderByCreatedAtAsc(ApprovalStatus status);
     long countByOrderStatus(OrderStatus status);
+    long countByApprovalStatus(ApprovalStatus status);
+    long countByPaymentStatus(PaymentStatus status);
 }

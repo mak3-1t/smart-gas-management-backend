@@ -10,4 +10,5 @@ import java.util.Optional;
 public interface StaffProfileRepository extends MongoRepository<StaffProfile, String> {
     Optional<StaffProfile> findByUserId(String userId);
     List<StaffProfile> findByStaffStatus(StaffStatus status);
+    long countByStaffStatus(StaffStatus status);
 }

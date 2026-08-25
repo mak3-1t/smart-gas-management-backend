@@ -23,4 +23,7 @@ public interface DeliveryRepository extends MongoRepository<Delivery, String> {
 
     /** Tìm tất cả đơn active của 1 Staff (Batch Delivery) */
     List<Delivery> findByStaffIdAndDeliveryStatusIn(String staffId, List<DeliveryStatus> statuses);
+
+    /** Đếm theo trạng thái – dùng cho Dashboard */
+    long countByDeliveryStatus(DeliveryStatus status);
 }

@@ -68,6 +68,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/staff/*/profile").hasRole("MANAGER")
                 .requestMatchers(HttpMethod.GET,  "/api/staff").hasRole("MANAGER")
                 .requestMatchers(HttpMethod.GET,  "/api/staff/available").hasRole("MANAGER")
+                .requestMatchers(HttpMethod.GET,  "/api/dashboard/**").hasRole("MANAGER")
 
                 // ─── Tất cả còn lại phải auth ───
                 .anyRequest().authenticated()

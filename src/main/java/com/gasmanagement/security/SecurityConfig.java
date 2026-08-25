@@ -70,6 +70,9 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET,  "/api/staff/available").hasRole("MANAGER")
                 .requestMatchers(HttpMethod.GET,  "/api/dashboard/**").hasRole("MANAGER")
 
+                // ─── Admin endpoints ───
+                .requestMatchers("/api/admin/**").hasRole("SYSTEM_ADMIN")
+
                 // ─── Tất cả còn lại phải auth ───
                 .anyRequest().authenticated()
             )

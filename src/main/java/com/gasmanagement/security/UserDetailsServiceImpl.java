@@ -30,15 +30,15 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 
         // Gán role với prefix ROLE_ để Spring Security nhận
         String roleAuthority = "ROLE_" + user.getRole().name();
+        
+        boolean enabled = user.getStatus() != com.gasmanagement.model.enums.AccountStatus.DISABLED;
+        boolean accountNonLocked = user.getStatus() != com.gasmanagement.model.enums.AccountStatus.LOCKED;
 
-        return org.springframework.security.core.userdetails.User.builder()
-                .username(user.getUsername())
-                .password(user.getPasswordHash())
-                .authorities(List.of(new SimpleGrantedAuthority(roleAuthority)))
-                .accountLocked(user.getStatus() ==
-                        com.gasmanagement.model.enums.AccountStatus.LOCKED)
-                .disabled(user.getStatus() ==
-                        com.gasmanagement.model.enums.AccountStatus.DISABLED)
-                .build();
+        return UserDetailsImpl.build(
+                user, 
+                List.of(new SimpleGrantedAuthority(roleAuthority)), 
+                enabled, 
+                accountNonLocked
+        );
     }
 }

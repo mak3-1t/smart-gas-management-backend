@@ -66,4 +66,14 @@ public interface InventoryService {
      * @param managerId Manager thực hiện
      */
     void importStock(String productId, int quantity, String note, String managerId);
+
+    /**
+     * Get all inventories
+     */
+    java.util.List<com.gasmanagement.model.Inventory> getAllInventories();
+
+    /**
+     * Get inventory by product ID
+     */
+    com.gasmanagement.model.Inventory getInventoryByProductId(String productId);
 }

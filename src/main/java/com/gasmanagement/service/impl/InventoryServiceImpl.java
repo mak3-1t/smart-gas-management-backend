@@ -170,6 +170,18 @@ public class InventoryServiceImpl implements InventoryService {
         log.info("Stock imported: product={}, qty={}", productId, quantity);
     }
 
+    // ─────────────── QUERY ───────────────
+
+    @Override
+    public java.util.List<Inventory> getAllInventories() {
+        return inventoryRepository.findAll();
+    }
+
+    @Override
+    public Inventory getInventoryByProductId(String productId) {
+        return findInventoryOrThrow(productId);
+    }
+
     // ─────────────── HELPERS ───────────────
 
     private Inventory findInventoryOrThrow(String productId) {

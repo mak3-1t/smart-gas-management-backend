@@ -2,16 +2,16 @@ package com.gasmanagement.repository;
 
 import com.gasmanagement.model.Product;
 import com.gasmanagement.model.enums.ProductStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
-import org.springframework.data.mongodb.repository.Query;
+import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
+@Repository
 public interface ProductRepository extends MongoRepository<Product, String> {
-    List<Product> findByStatus(ProductStatus status);
-    List<Product> findByBrandIdAndStatus(String brandId, ProductStatus status);
+    Page<Product> findByStatus(ProductStatus status, Pageable pageable);
     List<Product> findByCategoryIdAndStatus(String categoryId, ProductStatus status);
-
-    @Query("{ 'name': { $regex: ?0, $options: 'i' }, 'status': 'ACTIVE' }")
-    List<Product> searchByName(String keyword);
+    List<Product> findByBrandIdAndStatus(String brandId, ProductStatus status);
 }

@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/manager/orders")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('MANAGER')")
+@PreAuthorize("hasAnyRole('MANAGER', 'SYSTEM_ADMIN')")
 public class OrderApprovalController {
 
     private final OrderApprovalService orderApprovalService;

@@ -13,7 +13,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/manager/inventory")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('MANAGER')")
+@PreAuthorize("hasAnyRole('MANAGER', 'SYSTEM_ADMIN')")
 public class InventoryController {
 
     private final InventoryService inventoryService;

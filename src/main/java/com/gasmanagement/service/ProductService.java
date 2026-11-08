@@ -15,8 +15,17 @@ public interface ProductService {
     ProductResponse createProduct(ProductRequest request);
     ProductResponse updateProduct(String id, ProductRequest request);
     ProductResponse changeProductStatus(String id, boolean isActive);
+    void deleteProduct(String id);
     Page<ProductResponse> getAllProducts(Boolean isActive, Pageable pageable);
     ProductResponse getProductById(String id);
+
+    /**
+     * Tìm kiếm và lọc sản phẩm cho Khách hàng
+     */
+    Page<ProductResponse> searchProducts(String keyword, String brandId, String categoryId,
+                                         String gasType, Double minWeight, Double maxWeight,
+                                         Double minPrice, Double maxPrice, Boolean inStockOnly,
+                                         Pageable pageable);
 
     // --- Category ---
     Category createCategory(Category category);

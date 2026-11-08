@@ -28,4 +28,7 @@ public class ProductRequest {
     private String description;
     
     private List<String> images;
+
+    @Min(value = 0, message = "Số lượng tồn kho không được âm")
+    private Integer stockCount;
 }

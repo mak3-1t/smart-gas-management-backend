@@ -62,6 +62,22 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.error(message));
     }
 
+    /** 403 – Forbidden / Không có quyền truy cập */
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAccessDenied(org.springframework.security.access.AccessDeniedException ex) {
+        log.warn("Access denied: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ApiResponse.error("Bạn không có quyền thực hiện thao tác này"));
+    }
+
+    /** 401 – Unauthorized / Sai thông tin đăng nhập */
+    @ExceptionHandler(org.springframework.security.authentication.BadCredentialsException.class)
+    public ResponseEntity<ApiResponse<Void>> handleBadCredentials(org.springframework.security.authentication.BadCredentialsException ex) {
+        log.warn("Bad credentials: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(ApiResponse.error("Tên đăng nhập hoặc mật khẩu không chính xác"));
+    }
+
     /** 500 – Unexpected errors */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleGeneral(Exception ex) {
@@ -70,3 +86,4 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.error("Lỗi hệ thống. Vui lòng thử lại sau."));
     }
 }
+

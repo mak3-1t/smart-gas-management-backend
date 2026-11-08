@@ -17,15 +17,21 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import java.util.List;
 
 /**
  * Spring Security configuration.
  *
  * <ul>
  *   <li>Stateless session (JWT)</li>
+ *   <li>CORS filter enabled for Frontend clients</li>
  *   <li>@PreAuthorize enabled</li>
- *   <li>Public: /api/auth/**, /actuator/health</li>
- *   <li>Role-based: MANAGER vs STAFF vs CUSTOMER</li>
+ *   <li>Public: /api/auth/**, /api/products/** (GET), /actuator/health</li>
+ *   <li>Role-based: CUSTOMER vs STAFF vs MANAGER vs SYSTEM_ADMIN</li>
  * </ul>
  */
 @Configuration
@@ -40,6 +46,9 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
+            // Bật CORS cho phép kết nối từ Frontend
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+
             // Tắt CSRF (API stateless không cần)
             .csrf(AbstractHttpConfigurer::disable)
 
@@ -51,9 +60,23 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 // ─── Public endpoints ───
                 .requestMatchers("/api/auth/**").permitAll()
+                .requestMatchers("/api/payos/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/reviews/product/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/vouchers/usable").permitAll()
                 .requestMatchers("/actuator/health").permitAll()
 
+                // ─── Customer endpoints ───
+                .requestMatchers("/api/customer/**").hasRole("CUSTOMER")
+                .requestMatchers("/api/cart/**").hasRole("CUSTOMER")
+                .requestMatchers(HttpMethod.POST, "/api/orders").hasRole("CUSTOMER")
+                .requestMatchers(HttpMethod.GET,  "/api/orders/my-orders").hasRole("CUSTOMER")
+                .requestMatchers(HttpMethod.POST, "/api/orders/*/cancel").hasRole("CUSTOMER")
+                .requestMatchers(HttpMethod.POST, "/api/reviews").hasRole("CUSTOMER")
+                .requestMatchers(HttpMethod.POST, "/api/payments/*/proof").hasRole("CUSTOMER")
+
                 // ─── Staff endpoints ───
+                .requestMatchers(HttpMethod.POST, "/api/payments/*/confirm").hasAnyRole("STAFF", "MANAGER")
                 .requestMatchers(HttpMethod.POST, "/api/deliveries/*/accept").hasRole("STAFF")
                 .requestMatchers(HttpMethod.POST, "/api/deliveries/*/reject").hasRole("STAFF")
                 .requestMatchers(HttpMethod.POST, "/api/deliveries/*/start").hasRole("STAFF")
@@ -61,16 +84,27 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/deliveries/*/fail").hasRole("STAFF")
                 .requestMatchers(HttpMethod.POST, "/api/deliveries/*/cylinder-exchange").hasRole("STAFF")
 
-                // ─── Manager endpoints ───
-                .requestMatchers(HttpMethod.POST, "/api/deliveries/assign").hasRole("MANAGER")
-                .requestMatchers(HttpMethod.GET,  "/api/deliveries").hasRole("MANAGER")
-                .requestMatchers(HttpMethod.GET,  "/api/deliveries/waiting").hasRole("MANAGER")
-                .requestMatchers(HttpMethod.POST, "/api/staff/*/profile").hasRole("MANAGER")
-                .requestMatchers(HttpMethod.GET,  "/api/staff").hasRole("MANAGER")
-                .requestMatchers(HttpMethod.GET,  "/api/staff/available").hasRole("MANAGER")
-                .requestMatchers(HttpMethod.GET,  "/api/dashboard/**").hasRole("MANAGER")
+                // ─── Manager & System Admin endpoints ───
+                .requestMatchers(HttpMethod.GET, "/api/manager/settings").hasAnyRole("MANAGER", "SYSTEM_ADMIN", "CUSTOMER")
+                .requestMatchers("/api/manager/**").hasAnyRole("MANAGER", "SYSTEM_ADMIN")
+                .requestMatchers(HttpMethod.POST, "/api/payments/*/verify").hasAnyRole("MANAGER", "SYSTEM_ADMIN")
+                .requestMatchers(HttpMethod.POST, "/api/deliveries/assign").hasAnyRole("MANAGER", "SYSTEM_ADMIN")
+                .requestMatchers(HttpMethod.GET,  "/api/deliveries").hasAnyRole("MANAGER", "SYSTEM_ADMIN")
+                .requestMatchers(HttpMethod.GET,  "/api/deliveries/waiting").hasAnyRole("MANAGER", "SYSTEM_ADMIN")
+                .requestMatchers(HttpMethod.POST, "/api/staff/*/profile").hasAnyRole("MANAGER", "SYSTEM_ADMIN")
+                .requestMatchers(HttpMethod.GET,  "/api/staff").hasAnyRole("MANAGER", "SYSTEM_ADMIN")
+                .requestMatchers(HttpMethod.GET,  "/api/staff/available").hasAnyRole("MANAGER", "SYSTEM_ADMIN")
+                .requestMatchers(HttpMethod.GET,  "/api/dashboard/**").hasAnyRole("MANAGER", "SYSTEM_ADMIN")
+                .requestMatchers(HttpMethod.GET,  "/api/orders/all").hasAnyRole("MANAGER", "SYSTEM_ADMIN")
 
                 // ─── Admin endpoints ───
+                .requestMatchers(HttpMethod.GET, "/api/admin/accounts").hasAnyRole("MANAGER", "SYSTEM_ADMIN")
+                .requestMatchers(HttpMethod.GET, "/api/admin/customers").hasAnyRole("MANAGER", "SYSTEM_ADMIN")
+                .requestMatchers(HttpMethod.GET, "/api/admin/managers").hasAnyRole("MANAGER", "SYSTEM_ADMIN")
+                .requestMatchers(HttpMethod.POST, "/api/admin/accounts").hasAnyRole("MANAGER", "SYSTEM_ADMIN")
+                .requestMatchers(HttpMethod.PUT, "/api/admin/accounts/*/password").hasAnyRole("MANAGER", "SYSTEM_ADMIN")
+                .requestMatchers(HttpMethod.DELETE, "/api/admin/accounts/*").hasAnyRole("MANAGER", "SYSTEM_ADMIN")
+                .requestMatchers(HttpMethod.POST, "/api/admin/reset-transactional-data").hasAnyRole("MANAGER", "SYSTEM_ADMIN")
                 .requestMatchers("/api/admin/**").hasRole("SYSTEM_ADMIN")
 
                 // ─── Tất cả còn lại phải auth ───
@@ -84,6 +118,20 @@ public class SecurityConfig {
             .authenticationProvider(authenticationProvider());
 
         return http.build();
+    }
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowedOriginPatterns(List.of("*"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
+        config.setAllowedHeaders(List.of("*"));
+        config.setAllowCredentials(true);
+        config.setMaxAge(3600L);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", config);
+        return source;
     }
 
     @Bean

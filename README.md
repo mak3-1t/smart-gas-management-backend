@@ -1,4 +1,4 @@
-# Smart Gas Management – Backend
+﻿# Smart Gas Management – Backend
 
 ## Yêu cầu
 - Java 17+
@@ -16,7 +16,7 @@ copy .env.example .env
 ### Bước 2 – Điền thông tin vào `.env`
 Mở file `.env` và điền:
 ```
-MONGODB_URI=mongodb+srv://shiginami2510_db_user:<PASSWORD>@cluster0.gezbq0t.mongodb.net/gas_management_db?retryWrites=true&w=majority&appName=Cluster0
+MONGODB_URI=mongodb+srv://<USERNAME>:<PASSWORD>@<CLUSTER_HOST>/gas_management_db?retryWrites=true&w=majority&appName=Cluster0
 JWT_SECRET=<xin-từ-team-lead>
 ```
 
@@ -40,9 +40,9 @@ Mở trình duyệt: `http://localhost:8080`
 | Thông số | Giá trị |
 |---|---|
 | Provider | MongoDB Atlas |
-| Cluster | `cluster0.gezbq0t.mongodb.net` |
+| Cluster | `<CLUSTER_HOST>` |
 | Database | `gas_management_db` |
-| Username | `shiginami2510_db_user` |
+| Username | `<USERNAME>` |
 
 > Password – hỏi Team Lead riêng, không để trong tài liệu này.
 

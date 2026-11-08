@@ -1,8 +1,8 @@
 package com.gasmanagement.dto.response;
 
 import com.gasmanagement.model.Delivery;
-import com.gasmanagement.model.enums.DeliveryFailureReason;
-import com.gasmanagement.model.enums.DeliveryStatus;
+import com.gasmanagement.model.Order;
+import com.gasmanagement.model.enums.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Response DTO cho Delivery entity.
+ * Response DTO cho Delivery entity (đã đính kèm thông tin Order cho Shipper).
  */
 @Data
 @Builder
@@ -22,8 +22,21 @@ public class DeliveryResponse {
 
     private String id;
     private String orderId;
+    private String orderCode;
     private String staffId;
     private String staffName;
+
+    private String customerName;
+    private String customerPhone;
+    private Order.AddressSnapshot deliveryAddressSnapshot;
+    private List<Order.OrderItem> items;
+
+    private OrderStatus orderStatus;
+    private ApprovalStatus approvalStatus;
+    private PaymentMethod paymentMethod;
+    private PaymentStatus paymentStatus;
+    private String paymentId;
+    private Double finalAmount;
 
     private DeliveryStatus deliveryStatus;
 

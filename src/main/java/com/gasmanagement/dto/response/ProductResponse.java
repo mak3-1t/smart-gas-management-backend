@@ -1,13 +1,17 @@
 package com.gasmanagement.dto.response;
 
 import com.gasmanagement.model.enums.ProductStatus;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.util.List;
 
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class ProductResponse {
     private String id;
     private String name;
@@ -28,4 +32,7 @@ public class ProductResponse {
     private List<String> images;
     
     private ProductStatus status;
+
+    private boolean inStock;
+    private int availableStock;
 }

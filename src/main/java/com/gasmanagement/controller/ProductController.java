@@ -20,7 +20,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/manager/products")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('MANAGER')")
+@PreAuthorize("hasAnyRole('MANAGER', 'SYSTEM_ADMIN')")
 public class ProductController {
 
     private final ProductService productService;
@@ -44,6 +44,12 @@ public class ProductController {
             @PathVariable String id,
             @RequestParam boolean isActive) {
         return ResponseEntity.ok(ApiResponse.ok(productService.changeProductStatus(id, isActive)));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<ApiResponse<Void>> deleteProduct(@PathVariable String id) {
+        productService.deleteProduct(id);
+        return ResponseEntity.ok(ApiResponse.ok("Đã xóa sản phẩm thành công", null));
     }
 
     @GetMapping

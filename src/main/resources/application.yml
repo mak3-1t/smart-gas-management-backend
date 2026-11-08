@@ -1,11 +1,13 @@
 spring:
   application:
     name: smart-gas-management
+  config:
+    import: optional:file:.env[.properties]
 
   data:
     mongodb:
-      # Đọc từ biến môi trường - KHÔNG hardcode credential ở đây
-      uri: ${MONGODB_URI}
+      # Đọc từ biến môi trường hoặc fallback về localhost
+      uri: ${MONGODB_URI:mongodb://localhost:27017/gas_management_db}
       database: ${MONGODB_DATABASE:gas_management_db}
       auto-index-creation: true
 
@@ -27,6 +29,27 @@ logging:
 # JWT
 # ============================================================
 jwt:
+  # BẮT BUỘC đặt JWT_SECRET trong file .env (không có giá trị mặc định để tránh lộ khóa khi đưa lên Git)
   secret: ${JWT_SECRET}
   expiration: ${JWT_EXPIRATION:86400000}           # Default: 24 giờ
   refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}  # Default: 7 ngày
+
+# ============================================================
+# PayOS (đọc từ .env)
+# ============================================================
+payos:
+  client-id: ${PAYOS_CLIENT_ID:}
+  api-key: ${PAYOS_API_KEY:}
+  checksum-key: ${PAYOS_CHECKSUM_KEY:}
+
+# ============================================================
+# Tài khoản nhận chuyển khoản chính chủ (dùng chung cho VietQR & PayOS)
+# ============================================================
+payment:
+  bank:
+    bin: ${BANK_BIN:970418}
+    code: ${BANK_CODE:BIDV}
+    name: ${BANK_NAME:BIDV (Ngân hàng TMCP Đầu tư và Phát triển VN)}
+    account-number: ${BANK_ACCOUNT_NUMBER:}
+    account-name: ${BANK_ACCOUNT_NAME:}
+

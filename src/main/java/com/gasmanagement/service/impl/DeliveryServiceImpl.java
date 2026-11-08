@@ -3,13 +3,19 @@ package com.gasmanagement.service.impl;
 import com.gasmanagement.dto.request.DeliveryActionRequest;
 import com.gasmanagement.dto.request.DeliveryAssignRequest;
 import com.gasmanagement.dto.response.DeliveryResponse;
+import com.gasmanagement.exception.BusinessException;
 import com.gasmanagement.exception.ResourceNotFoundException;
+import com.gasmanagement.model.CustomerProfile;
 import com.gasmanagement.model.Delivery;
 import com.gasmanagement.model.Order;
+import com.gasmanagement.model.Payment;
 import com.gasmanagement.model.StaffProfile;
+import com.gasmanagement.model.User;
 import com.gasmanagement.model.enums.*;
+import com.gasmanagement.repository.CustomerProfileRepository;
 import com.gasmanagement.repository.DeliveryRepository;
 import com.gasmanagement.repository.OrderRepository;
+import com.gasmanagement.repository.PaymentRepository;
 import com.gasmanagement.repository.StaffProfileRepository;
 import com.gasmanagement.repository.UserRepository;
 import com.gasmanagement.service.DeliveryService;
@@ -30,6 +36,8 @@ public class DeliveryServiceImpl implements DeliveryService {
 
     private final DeliveryRepository deliveryRepository;
     private final OrderRepository orderRepository;
+    private final PaymentRepository paymentRepository;
+    private final CustomerProfileRepository customerProfileRepository;
     private final StaffProfileRepository staffProfileRepository;
     private final UserRepository userRepository;
     private final InventoryService inventoryService;
@@ -38,55 +46,82 @@ public class DeliveryServiceImpl implements DeliveryService {
 
     @Override
     public DeliveryResponse assignDelivery(DeliveryAssignRequest request) {
-        Order order = orderRepository.findById(request.getOrderId())
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Không tìm thấy đơn hàng: " + request.getOrderId()));
+        String rawOrderId = request.getOrderId() != null ? request.getOrderId().trim().replaceFirst("^#", "") : "";
+        Order order = orderRepository.findById(rawOrderId)
+                .orElseGet(() -> orderRepository.findByOrderCode(rawOrderId)
+                        .orElseThrow(() -> new ResourceNotFoundException(
+                                "Không tìm thấy đơn hàng: " + request.getOrderId())));
 
-        // Validate: Order phải được APPROVED trước khi assign
+        if (order.getOrderStatus() == OrderStatus.CANCELLED || order.getOrderStatus() == OrderStatus.DELIVERED) {
+            throw new BusinessException("Không thể phân công đơn hàng ở trạng thái: " + order.getOrderStatus());
+        }
+
+        // Nếu đơn đang PENDING_APPROVAL mà Manager phân công luôn thì tự động APPROVE đơn
+        if (order.getApprovalStatus() == ApprovalStatus.PENDING_APPROVAL) {
+            order.setApprovalStatus(ApprovalStatus.APPROVED);
+            order.setUpdatedAt(LocalDateTime.now());
+            orderRepository.save(order);
+        }
+
         if (order.getApprovalStatus() != ApprovalStatus.APPROVED) {
             throw new IllegalStateException(
                     "Đơn hàng chưa được Manager duyệt. ApprovalStatus hiện tại: "
                     + order.getApprovalStatus());
         }
 
-        // COD: ORDER_PLACED + PENDING → vẫn được giao
-        // Prepaid: phải PAID
-        boolean isCod = order.getPaymentMethod() == PaymentMethod.COD;
-        if (!isCod && order.getPaymentStatus() != PaymentStatus.PAID) {
-            throw new IllegalStateException(
-                    "Đơn thanh toán online chưa được thanh toán. PaymentStatus: "
-                    + order.getPaymentStatus());
-        }
-
-        // Validate Staff tồn tại và AVAILABLE
         StaffProfile staff = staffProfileRepository.findByUserId(request.getStaffId())
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Không tìm thấy staff: " + request.getStaffId()));
+                .orElseGet(() -> staffProfileRepository.findById(request.getStaffId())
+                        .orElseGet(() -> userRepository.findByUsername(request.getStaffId())
+                                .flatMap(u -> staffProfileRepository.findByUserId(u.getId()))
+                                .orElseThrow(() -> new ResourceNotFoundException(
+                                        "Không tìm thấy staff: " + request.getStaffId()))));
 
-        if (staff.getStaffStatus() != StaffStatus.AVAILABLE) {
-            throw new IllegalStateException(
-                    "Staff không khả dụng. Trạng thái hiện tại: " + staff.getStaffStatus());
+        String resolvedStaffUserId = staff.getUserId();
+
+        // Kiểm tra xem đã có Delivery cho order này chưa
+        Delivery delivery = deliveryRepository.findByOrderId(order.getId())
+                .orElseGet(() -> Delivery.builder()
+                        .orderId(order.getId())
+                        .statusHistory(new ArrayList<>())
+                        .createdAt(LocalDateTime.now())
+                        .build());
+
+        // Nếu trước đó đã gán cho staff khác thì gỡ khỏi activeDeliveryIds của staff cũ
+        if (delivery.getId() != null && delivery.getStaffId() != null
+                && !delivery.getStaffId().equals(resolvedStaffUserId)) {
+            staffProfileRepository.findByUserId(delivery.getStaffId()).ifPresent(oldStaff -> {
+                if (oldStaff.getActiveDeliveryIds() != null) {
+                    oldStaff.getActiveDeliveryIds().remove(delivery.getId());
+                    if (oldStaff.getActiveDeliveryIds().isEmpty() && oldStaff.getStaffStatus() == StaffStatus.BUSY) {
+                        oldStaff.setStaffStatus(StaffStatus.AVAILABLE);
+                    }
+                    staffProfileRepository.save(oldStaff);
+                }
+            });
         }
 
-        // Tạo Delivery
-        Delivery delivery = Delivery.builder()
-                .orderId(request.getOrderId())
-                .staffId(request.getStaffId())
-                .deliveryStatus(DeliveryStatus.WAITING)
-                .batchId(request.getBatchId())
-                .deliverySequence(request.getDeliverySequence())
-                .assignedAt(LocalDateTime.now())
-                .statusHistory(new ArrayList<>())
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
-                .build();
+        delivery.setStaffId(resolvedStaffUserId);
+        delivery.setDeliveryStatus(DeliveryStatus.WAITING);
+        delivery.setBatchId(request.getBatchId());
+        delivery.setDeliverySequence(request.getDeliverySequence());
+        delivery.setAssignedAt(LocalDateTime.now());
+        delivery.setUpdatedAt(LocalDateTime.now());
 
         addStatusHistory(delivery, DeliveryStatus.WAITING.name(), "SYSTEM",
-                "Assigned to staff: " + request.getStaffId());
+                "Assigned to staff: " + resolvedStaffUserId);
 
         Delivery saved = deliveryRepository.save(delivery);
+
+        if (staff.getActiveDeliveryIds() == null) {
+            staff.setActiveDeliveryIds(new ArrayList<>());
+        }
+        if (!staff.getActiveDeliveryIds().contains(saved.getId())) {
+            staff.getActiveDeliveryIds().add(saved.getId());
+            staffProfileRepository.save(staff);
+        }
+
         log.info("Delivery {} assigned to staff {} for order {}",
-                saved.getId(), request.getStaffId(), request.getOrderId());
+                saved.getId(), resolvedStaffUserId, order.getId());
 
         return mapToResponse(saved);
     }
@@ -123,7 +158,6 @@ public class DeliveryServiceImpl implements DeliveryService {
     public DeliveryResponse acceptDelivery(String deliveryId, DeliveryActionRequest request) {
         Delivery delivery = findDeliveryOrThrow(deliveryId);
 
-        // Race condition check: chỉ WAITING mới được accept
         if (delivery.getDeliveryStatus() != DeliveryStatus.WAITING) {
             throw new IllegalStateException(
                     "Đơn giao này không thể nhận. Trạng thái: "
@@ -131,7 +165,6 @@ public class DeliveryServiceImpl implements DeliveryService {
                     + ". Có thể đã được Staff khác nhận rồi.");
         }
 
-        // Update Delivery
         delivery.setDeliveryStatus(DeliveryStatus.ACCEPTED);
         delivery.setAcceptedAt(LocalDateTime.now());
         delivery.setUpdatedAt(LocalDateTime.now());
@@ -140,17 +173,18 @@ public class DeliveryServiceImpl implements DeliveryService {
 
         deliveryRepository.save(delivery);
 
-        // Cập nhật Staff → BUSY + thêm vào activeDeliveryIds
         StaffProfile staff = staffProfileRepository.findByUserId(delivery.getStaffId())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Không tìm thấy staff profile: " + delivery.getStaffId()));
 
         staff.setStaffStatus(StaffStatus.BUSY);
         if (staff.getActiveDeliveryIds() == null) staff.setActiveDeliveryIds(new ArrayList<>());
-        staff.getActiveDeliveryIds().add(deliveryId);
+        if (!staff.getActiveDeliveryIds().contains(delivery.getId())) {
+            staff.getActiveDeliveryIds().add(delivery.getId());
+        }
         staffProfileRepository.save(staff);
 
-        log.info("Delivery {} ACCEPTED by staff {}", deliveryId, request.getStaffId());
+        log.info("Delivery {} ACCEPTED by staff {}", delivery.getId(), request.getStaffId());
         return mapToResponse(delivery);
     }
 
@@ -162,16 +196,14 @@ public class DeliveryServiceImpl implements DeliveryService {
             throw new IllegalStateException("Chỉ có thể từ chối đơn đang WAITING");
         }
 
-        // Staff vẫn AVAILABLE, xóa khỏi active list
         StaffProfile staff = staffProfileRepository.findByUserId(delivery.getStaffId()).orElse(null);
         if (staff != null) {
             staff.setStaffStatus(StaffStatus.AVAILABLE);
             if (staff.getActiveDeliveryIds() != null)
-                staff.getActiveDeliveryIds().remove(deliveryId);
+                staff.getActiveDeliveryIds().remove(delivery.getId());
             staffProfileRepository.save(staff);
         }
 
-        // Delivery về WAITING, xóa staffId để chờ Manager assign lại
         delivery.setStaffId(null);
         delivery.setUpdatedAt(LocalDateTime.now());
         addStatusHistory(delivery, "REJECTED_BY_STAFF",
@@ -179,13 +211,19 @@ public class DeliveryServiceImpl implements DeliveryService {
                 "Staff từ chối: " + (request.getNote() != null ? request.getNote() : ""));
 
         deliveryRepository.save(delivery);
-        log.info("Delivery {} REJECTED by staff {}", deliveryId, request.getStaffId());
+        log.info("Delivery {} REJECTED by staff {}", delivery.getId(), request.getStaffId());
         return mapToResponse(delivery);
     }
 
     @Override
     public DeliveryResponse startDelivery(String deliveryId, DeliveryActionRequest request) {
         Delivery delivery = findDeliveryOrThrow(deliveryId);
+
+        // Nếu đơn đang ở WAITING thì tự động chuyển qua ACCEPTED rồi sang DELIVERING để trải nghiệm mượt mà
+        if (delivery.getDeliveryStatus() == DeliveryStatus.WAITING) {
+            acceptDelivery(delivery.getId(), request);
+            delivery = findDeliveryOrThrow(delivery.getId());
+        }
 
         if (delivery.getDeliveryStatus() != DeliveryStatus.ACCEPTED) {
             throw new IllegalStateException("Chỉ có thể bắt đầu giao khi đơn ở trạng thái ACCEPTED");
@@ -198,7 +236,8 @@ public class DeliveryServiceImpl implements DeliveryService {
                 request.getStaffId(), "Bắt đầu giao hàng");
 
         deliveryRepository.save(delivery);
-        log.info("Delivery {} STARTED by staff {}", deliveryId, request.getStaffId());
+
+        log.info("Delivery {} STARTED by staff {}", delivery.getId(), request.getStaffId());
         return mapToResponse(delivery);
     }
 
@@ -206,42 +245,64 @@ public class DeliveryServiceImpl implements DeliveryService {
     public DeliveryResponse completeDelivery(String deliveryId, DeliveryActionRequest request) {
         Delivery delivery = findDeliveryOrThrow(deliveryId);
 
+        if (delivery.getDeliveryStatus() == DeliveryStatus.WAITING
+                || delivery.getDeliveryStatus() == DeliveryStatus.ACCEPTED) {
+            startDelivery(delivery.getId(), request);
+            delivery = findDeliveryOrThrow(delivery.getId());
+        }
+
         if (delivery.getDeliveryStatus() != DeliveryStatus.DELIVERING) {
             throw new IllegalStateException("Chỉ có thể hoàn thành khi đơn đang DELIVERING");
         }
 
-        // Lấy order kiểm tra payment
-        Order order = orderRepository.findById(delivery.getOrderId())
+        String targetOrderId = delivery.getOrderId();
+        Order order = orderRepository.findById(targetOrderId)
                 .orElseThrow(() -> new ResourceNotFoundException(
-                        "Không tìm thấy đơn hàng: " + delivery.getOrderId()));
+                        "Không tìm thấy đơn hàng: " + targetOrderId));
 
-        // Kiểm tra đã thanh toán chưa
+        // Nếu đơn COD chưa đánh dấu PAID thì tự động xác nhận thu tiền COD khi hoàn tất giao
+        if (order.getPaymentStatus() != PaymentStatus.PAID && order.getPaymentMethod() == PaymentMethod.COD) {
+            order.setPaymentStatus(PaymentStatus.PAID);
+            paymentRepository.findByOrderId(order.getId()).ifPresent(p -> {
+                p.setPaymentStatus(PaymentStatus.PAID);
+                p.setPaidAmount(order.getFinalAmount());
+                p.setConfirmedByStaffId(request.getStaffId());
+                p.setConfirmedAt(LocalDateTime.now());
+                p.setUpdatedAt(LocalDateTime.now());
+                paymentRepository.save(p);
+            });
+        }
+
         if (order.getPaymentStatus() != PaymentStatus.PAID) {
             throw new IllegalStateException(
                     "Đơn chưa được thanh toán. PaymentStatus: " + order.getPaymentStatus()
                     + ". Vui lòng xác nhận thu tiền trước.");
         }
 
-        // Kiểm tra Cylinder Exchange nếu cần
+        // Kiểm tra Cylinder Exchange: nếu khách đổi vỏ mà chưa báo lỗi thì tự xác nhận thu hồi vỏ đạt chuẩn
         boolean hasExchange = order.getItems() != null && order.getItems().stream()
                 .anyMatch(item -> item.getPurchaseType() == PurchaseType.EXCHANGE);
 
         if (hasExchange) {
-            boolean allExchangeCompleted = order.getItems().stream()
+            order.getItems().stream()
                     .filter(item -> item.getPurchaseType() == PurchaseType.EXCHANGE)
-                    .allMatch(item -> item.getCylinderExchangeStatus() == CylinderExchangeStatus.COMPLETED);
-
-            if (!allExchangeCompleted) {
-                throw new IllegalStateException(
-                        "Cần xác nhận thu hồi vỏ bình trước khi hoàn thành giao hàng.");
-            }
+                    .forEach(item -> {
+                        if (item.getCylinderExchangeStatus() != CylinderExchangeStatus.COMPLETED
+                                && item.getCylinderExchangeStatus() != CylinderExchangeStatus.NO_CYLINDER) {
+                            item.setCylinderExchangeStatus(CylinderExchangeStatus.COMPLETED);
+                            if (item.getCylinderCondition() == null) {
+                                item.setCylinderCondition(CylinderCondition.NORMAL);
+                            }
+                        }
+                    });
         }
 
         // Cập nhật Inventory theo từng item
         if (order.getItems() != null) {
             for (Order.OrderItem item : order.getItems()) {
                 try {
-                    if (item.getPurchaseType() == PurchaseType.EXCHANGE) {
+                    if (item.getPurchaseType() == PurchaseType.EXCHANGE
+                            && item.getCylinderExchangeStatus() != CylinderExchangeStatus.NO_CYLINDER) {
                         inventoryService.processExchangeDelivery(
                                 item.getProductId(), item.getQuantity(),
                                 order.getId(), request.getStaffId());
@@ -277,10 +338,9 @@ public class DeliveryServiceImpl implements DeliveryService {
                 .build());
         orderRepository.save(order);
 
-        // Cập nhật Staff stats + xóa khỏi active list
-        updateStaffAfterDelivery(delivery.getStaffId(), deliveryId, true);
+        updateStaffAfterDelivery(delivery.getStaffId(), delivery.getId(), true);
 
-        log.info("Delivery {} COMPLETED by staff {}", deliveryId, request.getStaffId());
+        log.info("Delivery {} COMPLETED by staff {}", delivery.getId(), request.getStaffId());
         return mapToResponse(delivery);
     }
 
@@ -306,11 +366,10 @@ public class DeliveryServiceImpl implements DeliveryService {
                 "Thất bại: " + request.getFailureReason() + " - " + request.getNote());
         deliveryRepository.save(delivery);
 
-        // Cập nhật Staff stats
-        updateStaffAfterDelivery(delivery.getStaffId(), deliveryId, false);
+        updateStaffAfterDelivery(delivery.getStaffId(), delivery.getId(), false);
 
         log.info("Delivery {} FAILED by staff {}, reason: {}",
-                deliveryId, request.getStaffId(), request.getFailureReason());
+                delivery.getId(), request.getStaffId(), request.getFailureReason());
         return mapToResponse(delivery);
     }
 
@@ -318,15 +377,21 @@ public class DeliveryServiceImpl implements DeliveryService {
     public DeliveryResponse processCylinderExchange(String deliveryId, DeliveryActionRequest request) {
         Delivery delivery = findDeliveryOrThrow(deliveryId);
 
+        if (delivery.getDeliveryStatus() == DeliveryStatus.WAITING
+                || delivery.getDeliveryStatus() == DeliveryStatus.ACCEPTED) {
+            startDelivery(delivery.getId(), request);
+            delivery = findDeliveryOrThrow(delivery.getId());
+        }
+
         if (delivery.getDeliveryStatus() != DeliveryStatus.DELIVERING) {
             throw new IllegalStateException("Chỉ xử lý vỏ bình khi đang DELIVERING");
         }
 
-        Order order = orderRepository.findById(delivery.getOrderId())
+        String targetOrderId = delivery.getOrderId();
+        Order order = orderRepository.findById(targetOrderId)
                 .orElseThrow(() -> new ResourceNotFoundException(
-                        "Không tìm thấy đơn hàng: " + delivery.getOrderId()));
+                        "Không tìm thấy đơn hàng: " + targetOrderId));
 
-        // Cập nhật CylinderExchangeStatus + condition cho tất cả items EXCHANGE
         boolean hasNoEmptyCylinder = request.getFailureReason() == DeliveryFailureReason.NO_EMPTY_CYLINDER;
 
         if (order.getItems() != null) {
@@ -337,17 +402,21 @@ public class DeliveryServiceImpl implements DeliveryService {
                                 hasNoEmptyCylinder
                                         ? CylinderExchangeStatus.NO_CYLINDER
                                         : CylinderExchangeStatus.COMPLETED);
-                        item.setCylinderCondition(request.getCylinderCondition());
+                        item.setCylinderCondition(
+                                request.getCylinderCondition() != null
+                                        ? request.getCylinderCondition()
+                                        : CylinderCondition.NORMAL);
                     });
         }
 
-        // Nếu khách không có vỏ bình → tính adjustment fee
-        if (hasNoEmptyCylinder && request.getAdjustmentFee() != null) {
+        if (request.getAdjustmentFee() != null && request.getAdjustmentFee() != 0) {
             order.setAdjustmentFee(request.getAdjustmentFee());
             order.setAdjustmentNote(request.getAdjustmentNote());
-            // Tính lại finalAmount
-            Double currentFinal = order.getFinalAmount() != null ? order.getFinalAmount() : 0.0;
-            order.setFinalAmount(currentFinal + request.getAdjustmentFee());
+            Double gasSub = order.getGasSubtotal() != null ? order.getGasSubtotal() : 0.0;
+            Double cylSub = order.getCylinderFeeTotal() != null ? order.getCylinderFeeTotal() : 0.0;
+            Double deliv = order.getDeliveryFee() != null ? order.getDeliveryFee() : 0.0;
+            Double disc = order.getDiscountAmount() != null ? order.getDiscountAmount() : 0.0;
+            order.setFinalAmount(Math.max(0.0, gasSub + cylSub + deliv - disc + request.getAdjustmentFee()));
         }
 
         order.setUpdatedAt(LocalDateTime.now());
@@ -359,7 +428,7 @@ public class DeliveryServiceImpl implements DeliveryService {
         delivery.setUpdatedAt(LocalDateTime.now());
         deliveryRepository.save(delivery);
 
-        log.info("Cylinder exchange processed for delivery {}", deliveryId);
+        log.info("Cylinder exchange processed for delivery {}", delivery.getId());
         return mapToResponse(delivery);
     }
 
@@ -374,11 +443,12 @@ public class DeliveryServiceImpl implements DeliveryService {
 
     private Delivery findDeliveryOrThrow(String deliveryId) {
         return deliveryRepository.findById(deliveryId)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Không tìm thấy delivery: " + deliveryId));
+                .orElseGet(() -> deliveryRepository.findByOrderId(deliveryId)
+                        .orElseThrow(() -> new ResourceNotFoundException(
+                                "Không tìm thấy delivery: " + deliveryId)));
     }
 
-    private void addStatusHistory(Delivery delivery, String status, String note, String changedBy) {
+    private void addStatusHistory(Delivery delivery, String status, String changedBy, String note) {
         if (delivery.getStatusHistory() == null) delivery.setStatusHistory(new ArrayList<>());
         delivery.getStatusHistory().add(
                 Delivery.StatusHistory.builder()
@@ -389,20 +459,16 @@ public class DeliveryServiceImpl implements DeliveryService {
         );
     }
 
-    /**
-     * Cập nhật StaffProfile sau khi delivery hoàn thành hoặc thất bại.
-     */
     private void updateStaffAfterDelivery(String staffId, String deliveryId, boolean success) {
+        if (staffId == null) return;
         staffProfileRepository.findByUserId(staffId).ifPresent(staff -> {
             staff.setTotalDeliveries(staff.getTotalDeliveries() + 1);
             if (success) staff.setSuccessDeliveries(staff.getSuccessDeliveries() + 1);
             else         staff.setFailedDeliveries(staff.getFailedDeliveries() + 1);
 
-            // Xóa khỏi activeDeliveryIds
             if (staff.getActiveDeliveryIds() != null)
                 staff.getActiveDeliveryIds().remove(deliveryId);
 
-            // Nếu không còn đơn nào active → AVAILABLE
             if (staff.getActiveDeliveryIds() == null || staff.getActiveDeliveryIds().isEmpty()) {
                 staff.setStaffStatus(StaffStatus.AVAILABLE);
             }
@@ -414,16 +480,56 @@ public class DeliveryServiceImpl implements DeliveryService {
     private DeliveryResponse mapToResponse(Delivery delivery) {
         String staffName = null;
         if (delivery.getStaffId() != null) {
-            staffName = userRepository.findById(delivery.getStaffId())
-                    .map(u -> u.getUsername())
-                    .orElse(null);
+            staffName = customerProfileRepository.findByUserId(delivery.getStaffId())
+                    .map(CustomerProfile::getFullName)
+                    .filter(n -> n != null && !n.isBlank())
+                    .orElseGet(() -> userRepository.findById(delivery.getStaffId())
+                            .map(User::getUsername)
+                            .orElse(null));
+        }
+
+        Order order = delivery.getOrderId() != null
+                ? orderRepository.findById(delivery.getOrderId()).orElse(null)
+                : null;
+        Payment payment = (order != null && order.getId() != null)
+                ? paymentRepository.findByOrderId(order.getId()).orElse(null)
+                : null;
+
+        String customerName = null;
+        String customerPhone = null;
+        if (order != null) {
+            if (order.getDeliveryAddressSnapshot() != null) {
+                customerName = order.getDeliveryAddressSnapshot().getRecipientName();
+                customerPhone = order.getDeliveryAddressSnapshot().getPhone();
+            }
+            if ((customerName == null || customerName.isBlank()) && order.getCustomerId() != null) {
+                customerName = customerProfileRepository.findByUserId(order.getCustomerId())
+                        .map(CustomerProfile::getFullName)
+                        .orElseGet(() -> userRepository.findById(order.getCustomerId())
+                                .map(User::getUsername).orElse("Khách hàng"));
+            }
+            if ((customerPhone == null || customerPhone.isBlank()) && order.getCustomerId() != null) {
+                customerPhone = userRepository.findById(order.getCustomerId())
+                        .map(User::getPhone).orElse("");
+            }
         }
 
         return DeliveryResponse.builder()
                 .id(delivery.getId())
                 .orderId(delivery.getOrderId())
+                .orderCode(order != null ? order.getOrderCode() : delivery.getOrderId())
                 .staffId(delivery.getStaffId())
                 .staffName(staffName)
+                .customerName(customerName)
+                .customerPhone(customerPhone)
+                .deliveryAddressSnapshot(order != null ? order.getDeliveryAddressSnapshot() : null)
+                .items(order != null ? order.getItems() : null)
+                .orderStatus(order != null ? order.getOrderStatus() : null)
+                .approvalStatus(order != null ? order.getApprovalStatus() : null)
+                .paymentMethod(order != null ? order.getPaymentMethod() : null)
+                .paymentStatus(order != null ? order.getPaymentStatus() : null)
+                .paymentId(payment != null ? payment.getId() : null)
+                .finalAmount(order != null ? order.getFinalAmount() : null)
                 .deliveryStatus(delivery.getDeliveryStatus())
                 .batchId(delivery.getBatchId())
                 .deliverySequence(delivery.getDeliverySequence())

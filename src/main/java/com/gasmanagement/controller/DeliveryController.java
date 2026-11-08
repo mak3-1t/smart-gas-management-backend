@@ -4,12 +4,15 @@ import com.gasmanagement.dto.request.DeliveryActionRequest;
 import com.gasmanagement.dto.request.DeliveryAssignRequest;
 import com.gasmanagement.dto.response.ApiResponse;
 import com.gasmanagement.dto.response.DeliveryResponse;
+import com.gasmanagement.security.UserDetailsImpl;
 import com.gasmanagement.service.DeliveryService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -42,7 +45,7 @@ public class DeliveryController {
      * <pre>POST /api/deliveries/assign</pre>
      */
     @PostMapping("/assign")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'SYSTEM_ADMIN')")
     public ResponseEntity<ApiResponse<DeliveryResponse>> assignDelivery(
             @Valid @RequestBody DeliveryAssignRequest request) {
 
@@ -57,7 +60,7 @@ public class DeliveryController {
      * <pre>GET /api/deliveries</pre>
      */
     @GetMapping
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'SYSTEM_ADMIN')")
     public ResponseEntity<ApiResponse<List<DeliveryResponse>>> getAllDeliveries() {
         return ResponseEntity.ok(ApiResponse.ok(deliveryService.getAllDeliveries()));
     }
@@ -68,7 +71,7 @@ public class DeliveryController {
      * <pre>GET /api/deliveries/waiting</pre>
      */
     @GetMapping("/waiting")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'SYSTEM_ADMIN')")
     public ResponseEntity<ApiResponse<List<DeliveryResponse>>> getWaitingDeliveries() {
         return ResponseEntity.ok(ApiResponse.ok(deliveryService.getWaitingDeliveries()));
     }
@@ -105,7 +108,7 @@ public class DeliveryController {
      * <pre>GET /api/deliveries/staff/{staffId}</pre>
      */
     @GetMapping("/staff/{staffId}")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'SYSTEM_ADMIN')")
     public ResponseEntity<ApiResponse<List<DeliveryResponse>>> getDeliveriesByStaff(
             @PathVariable String staffId) {
 
@@ -113,6 +116,33 @@ public class DeliveryController {
     }
 
     // ─────────────── STAFF ACTION ENDPOINTS ───────────────
+
+    /**
+     * Staff xem các đơn giao được phân cho chính mình.
+     *
+     * <pre>GET /api/deliveries/my</pre>
+     */
+    @GetMapping("/my")
+    @PreAuthorize("hasRole('STAFF')")
+    public ResponseEntity<ApiResponse<List<DeliveryResponse>>> getMyDeliveries(
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        return ResponseEntity.ok(ApiResponse.ok(deliveryService.getDeliveriesByStaff(currentUser.getId())));
+    }
+
+    /**
+     * Gán staffId từ JWT (không tin staffId client gửi lên) và kiểm tra đơn giao
+     * đúng là của Staff này.
+     */
+    private DeliveryActionRequest bindStaff(String deliveryId, DeliveryActionRequest request,
+                                            UserDetailsImpl currentUser) {
+        if (request == null) request = new DeliveryActionRequest();
+        DeliveryResponse delivery = deliveryService.getDeliveryById(deliveryId);
+        if (delivery.getStaffId() != null && !delivery.getStaffId().equals(currentUser.getId())) {
+            throw new AccessDeniedException("Đơn giao này không được phân công cho bạn");
+        }
+        request.setStaffId(currentUser.getId());
+        return request;
+    }
 
     /**
      * Staff chấp nhận đơn giao hàng.
@@ -124,7 +154,9 @@ public class DeliveryController {
     @PreAuthorize("hasRole('STAFF')")
     public ResponseEntity<ApiResponse<DeliveryResponse>> acceptDelivery(
             @PathVariable String id,
-            @RequestBody DeliveryActionRequest request) {
+            @RequestBody(required = false) DeliveryActionRequest request,
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        request = bindStaff(id, request, currentUser);
 
         return ResponseEntity.ok(
                 ApiResponse.ok("Nhận đơn giao hàng thành công",
@@ -141,7 +173,9 @@ public class DeliveryController {
     @PreAuthorize("hasRole('STAFF')")
     public ResponseEntity<ApiResponse<DeliveryResponse>> rejectDelivery(
             @PathVariable String id,
-            @RequestBody DeliveryActionRequest request) {
+            @RequestBody(required = false) DeliveryActionRequest request,
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        request = bindStaff(id, request, currentUser);
 
         return ResponseEntity.ok(
                 ApiResponse.ok("Từ chối đơn giao hàng",
@@ -158,7 +192,9 @@ public class DeliveryController {
     @PreAuthorize("hasRole('STAFF')")
     public ResponseEntity<ApiResponse<DeliveryResponse>> startDelivery(
             @PathVariable String id,
-            @RequestBody DeliveryActionRequest request) {
+            @RequestBody(required = false) DeliveryActionRequest request,
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        request = bindStaff(id, request, currentUser);
 
         return ResponseEntity.ok(
                 ApiResponse.ok("Bắt đầu giao hàng",
@@ -176,7 +212,9 @@ public class DeliveryController {
     @PreAuthorize("hasRole('STAFF')")
     public ResponseEntity<ApiResponse<DeliveryResponse>> completeDelivery(
             @PathVariable String id,
-            @RequestBody DeliveryActionRequest request) {
+            @RequestBody(required = false) DeliveryActionRequest request,
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        request = bindStaff(id, request, currentUser);
 
         return ResponseEntity.ok(
                 ApiResponse.ok("Xác nhận giao hàng thành công",
@@ -194,7 +232,9 @@ public class DeliveryController {
     @PreAuthorize("hasRole('STAFF')")
     public ResponseEntity<ApiResponse<DeliveryResponse>> failDelivery(
             @PathVariable String id,
-            @RequestBody DeliveryActionRequest request) {
+            @RequestBody(required = false) DeliveryActionRequest request,
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        request = bindStaff(id, request, currentUser);
 
         return ResponseEntity.ok(
                 ApiResponse.ok("Đã ghi nhận giao hàng thất bại",
@@ -211,7 +251,9 @@ public class DeliveryController {
     @PreAuthorize("hasRole('STAFF')")
     public ResponseEntity<ApiResponse<DeliveryResponse>> processCylinderExchange(
             @PathVariable String id,
-            @RequestBody DeliveryActionRequest request) {
+            @RequestBody(required = false) DeliveryActionRequest request,
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        request = bindStaff(id, request, currentUser);
 
         return ResponseEntity.ok(
                 ApiResponse.ok("Xử lý vỏ bình thành công",

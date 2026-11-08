@@ -7,7 +7,6 @@ import com.gasmanagement.service.AuditService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -19,18 +18,32 @@ public class AuditServiceImpl implements AuditService {
 
     private final AuditLogRepository auditLogRepository;
 
-    @Async
     @Override
     public void logAction(String actorId, UserRole actorRole, String action,
                           String entityType, String entityId,
                           Object oldValue, Object newValue,
                           HttpServletRequest request) {
-        
         String ipAddress = null;
         if (request != null) {
-            ipAddress = getClientIpAddress(request);
+            try {
+                ipAddress = getClientIpAddress(request);
+            } catch (Exception ignored) {
+                ipAddress = "unknown";
+            }
         }
+        saveAuditLog(actorId, actorRole, action, entityType, entityId, oldValue, newValue, ipAddress);
+    }
 
+    @Override
+    public void logAction(String actorId, UserRole actorRole, String action,
+                          String entityType, String entityId,
+                          Object oldValue, Object newValue) {
+        saveAuditLog(actorId, actorRole, action, entityType, entityId, oldValue, newValue, null);
+    }
+
+    private void saveAuditLog(String actorId, UserRole actorRole, String action,
+                              String entityType, String entityId,
+                              Object oldValue, Object newValue, String ipAddress) {
         AuditLog auditLog = AuditLog.builder()
                 .actorId(actorId)
                 .actorRole(actorRole != null ? actorRole.name() : null)
@@ -51,14 +64,6 @@ public class AuditServiceImpl implements AuditService {
         }
     }
 
-    @Async
-    @Override
-    public void logAction(String actorId, UserRole actorRole, String action,
-                          String entityType, String entityId,
-                          Object oldValue, Object newValue) {
-        logAction(actorId, actorRole, action, entityType, entityId, oldValue, newValue, null);
-    }
-
     private String getClientIpAddress(HttpServletRequest request) {
         String[] headerNames = {
             "X-Forwarded-For",
@@ -67,11 +72,10 @@ public class AuditServiceImpl implements AuditService {
             "HTTP_CLIENT_IP",
             "HTTP_X_FORWARDED_FOR"
         };
-        
+
         for (String header : headerNames) {
             String ip = request.getHeader(header);
-            if (ip != null && ip.length() != 0 && !"unknown".equalsIgnoreCase(ip)) {
-                // X-Forwarded-For có thể chứa danh sách IPs, IP đầu tiên là IP thật của client
+            if (ip != null && !ip.isEmpty() && !"unknown".equalsIgnoreCase(ip)) {
                 return ip.split(",")[0].trim();
             }
         }

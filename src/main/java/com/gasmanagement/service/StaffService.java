@@ -28,6 +28,9 @@ public interface StaffService {
     /** Cập nhật vehicleInfo */
     StaffProfileResponse updateVehicleInfo(String userId, String vehicleInfo);
 
+    /** Cập nhật thông tin cá nhân & phương tiện của Staff (do Staff hoặc Manager thực hiện) */
+    StaffProfileResponse updateStaffInfo(String userId, String fullName, String phone, String vehicleInfo, com.gasmanagement.model.enums.StaffStatus staffStatus);
+
     // ─── STAFF SELF-SERVICE ───
 
     /** Staff tự cập nhật trạng thái (AVAILABLE / OFFLINE) */
